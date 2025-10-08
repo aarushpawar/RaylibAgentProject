@@ -1,23 +1,49 @@
 #include "raylib.h"
 #include "raymath.h"
 #include "Player.h"
-#include "Item.h"
+#include "Utils.h"
 
+#include <algorithm>
 #include <iostream>
+#include <vector>
 
 using namespace std;
 
-Item createRandomItem(int width, int height) {
-    return Item({ false, { (float)(rand() % width), (float)(rand() % height) } });
+Vector2 randomPosition(int width, int height) {
+    return Vector2({ (float)(rand() % width), (float)(rand() % height) });
 }
 
-void selectRandomItem(Item items[], int n) {
+Item createRandomItem(int width, int height) {
+    return Item({ false, (rand() % 4 == 0), randomPosition(width, height) });
+}
+
+Player createRandomPlayer(int width, int height, int playerType) {
+    return Player(randomPosition(width, height), (float)4, (float)0.03, Screen({ width, height }), playerType);
+}
+
+void updateItems(Item items[], int n, int width, int height) {
     for (int i = 0; i < n; i++) {
-        items[i].selected = false;
+        if (items[i].collected) {
+			items[i] = createRandomItem(width, height);
+        }
+    }
+}
+
+vector<Player> newGeneration(vector<Player>& players, int width, int height) {
+    std::sort(players.begin(), players.end(), [](const Player& a, const Player& b) {
+        return a.score > b.score;
+    });
+
+	vector<Player> newPlayers;
+
+    for (Player& player : players) {
+		Player randomPlayer = createRandomPlayer(width, height, 0);
+        randomPlayer.agent = player.agent;
+
+		newPlayers.push_back(randomPlayer);
     }
 
-    int index = (int)floor(rand() % n);
-    items[index].selected = true;
+    return newPlayers;
 }
 
 int main(void)
@@ -27,7 +53,13 @@ int main(void)
     InitWindow(width, height, "raylib [core] example - basic window");
     SetTargetFPS(FPS);
 
-    Player player = Player(Vector2Zero(), (float)4, (float)0.03);
+	int playerCount = 10;
+    vector<Player> players;
+
+    for (int i = 0; i < playerCount; i++) {
+		players.push_back(createRandomPlayer(width, height, i));
+    }
+
     Texture2D textures[] = {
         LoadTexture("resources/ship.png"),
         LoadTexture("resources/ship2.png"),
@@ -36,8 +68,8 @@ int main(void)
     };
     Texture2D playerTexture = LoadTexture("resources/ship.png");
 
-    int itemCount = 10;
-    Item items[10];
+    Item items[40];
+	int itemCount = sizeof(items) / sizeof(items[0]);
 
     double lastTimestamp = GetTime();
 
@@ -47,8 +79,6 @@ int main(void)
         items[i] = createRandomItem(width, height);
     }
 
-    selectRandomItem(items, itemCount);
-    
     while (!WindowShouldClose())
     {
         BeginDrawing();
@@ -58,32 +88,30 @@ int main(void)
 
         for (int i = 0; i < itemCount; i++) {
             Item current = items[i];
-            DrawCircle((int)current.position.x, (int)current.position.y, 8, (current.selected ? RED : BLACK));
-            
-            if (!current.selected) continue;
 
-            player.seek(current.position);
+            if (current.collected) continue;
+
+            DrawCircle((int)current.position.x, (int)current.position.y, 4, (current.isBomb ? RED : BLACK));
         }
 
-        if (GetTime() - lastTimestamp > 5) {
-            selectRandomItem(items, itemCount);
+
+        for (Player& player : players) {
+            player.update();
+            player.search(items, itemCount);
+            player.draw(textures, frameCount);
+        }
+
+		updateItems(items, itemCount, width, height);
+
+        if (GetTime() - lastTimestamp >= 10) {
+            players = newGeneration(players, width, height);
             lastTimestamp = GetTime();
-        }
+		}
 
-        player.update();
-        //DrawCircle(player.position.x, player.position.y, 24, BLACK);
-
-        Vector2 size = { (float)playerTexture.width, (float)playerTexture.height };
-        Rectangle sourceRec = { 0.0f, 0.0f, size.x, size.y };
-        Rectangle destRec = { player.position.x, player.position.y, size.x, size.y };
-        Vector2 origin = { size.x / 2, size.y / 2 };
-        float rotation = atan2(player.velocity.x, -player.velocity.y);
-
-        DrawTexturePro(textures[(frameCount / 10) % 3], sourceRec, destRec, origin, rotation * ((float)180 / PI), WHITE);
         EndDrawing();
     }
 
-    CloseWindow();
+    CloseWindow();  
 
     return 0;
 }
