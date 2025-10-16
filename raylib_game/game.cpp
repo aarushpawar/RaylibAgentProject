@@ -32,15 +32,50 @@ void updateItems(Item items[], int n, int width, int height) {
 vector<Player> newGeneration(vector<Player>& players, int width, int height) {
     std::sort(players.begin(), players.end(), [](const Player& a, const Player& b) {
         return a.score > b.score;
-    });
+        });
 
-	vector<Player> newPlayers;
+    vector<Player> newPlayers;
 
     for (Player& player : players) {
-		Player randomPlayer = createRandomPlayer(width, height, 0);
+        for (Player& player2 : players) {
+            if (&player == &player2) continue;
+            if (Vector2Distance(player.position, player2.position) < 32.f) {
+                Player child = createRandomPlayer(width, height, 0);
+                child.agent = {
+                    max(player.agent.pickupRadius, player2.agent.pickupRadius),
+                    max(player.agent.searchRadius, player2.agent.searchRadius)
+                };
+            }
+        }
+    }
+
+    float scalingValue = 0.9f;
+    int i = 0;
+
+    for (Player& player : players) {
+        if (newPlayers.size() >= players.size()) break;
+        Player randomPlayer = createRandomPlayer(width, height, 0);
+
         randomPlayer.agent = player.agent;
 
-		newPlayers.push_back(randomPlayer);
+        if (i < 3) {
+            randomPlayer.agent.pickupRadius = (player.agentType % 2 == 0) ? player.agent.pickupRadius * 1.5 * scalingValue : player.agent.pickupRadius;
+            randomPlayer.agent.searchRadius = (player.agentType % 2 == 0) ? player.agent.searchRadius : player.agent.searchRadius * 1.5 * scalingValue;
+            i++;
+        }
+        else if (i < 5)
+        {
+            randomPlayer.agent.pickupRadius = (player.agentType % 2 == 0) ? player.agent.pickupRadius : player.agent.pickupRadius * 2 * scalingValue;
+            randomPlayer.agent.searchRadius = (player.agentType % 2 == 0) ? player.agent.searchRadius * 2 * scalingValue : player.agent.searchRadius;
+            i++;
+        }
+        else
+        {
+            randomPlayer.agent.pickupRadius = player.agent.pickupRadius;
+            randomPlayer.agent.searchRadius = player.agent.searchRadius;
+        }
+
+        newPlayers.push_back(randomPlayer);
     }
 
     return newPlayers;
@@ -74,6 +109,7 @@ int main(void)
     double lastTimestamp = GetTime();
 
     int frameCount = 0;
+    int generation = 0;
 
     for (int i = 0; i < itemCount; i++) {
         items[i] = createRandomItem(width, height);
@@ -85,6 +121,7 @@ int main(void)
         ClearBackground(WHITE);
 
         frameCount++;
+        
 
         for (int i = 0; i < itemCount; i++) {
             Item current = items[i];
@@ -94,7 +131,6 @@ int main(void)
             DrawCircle((int)current.position.x, (int)current.position.y, 4, (current.isBomb ? RED : BLACK));
         }
 
-
         for (Player& player : players) {
             player.update();
             player.search(items, itemCount);
@@ -103,10 +139,18 @@ int main(void)
 
 		updateItems(items, itemCount, width, height);
 
-        if (GetTime() - lastTimestamp >= 10) {
+        if (GetTime() - lastTimestamp >= 30) {
             players = newGeneration(players, width, height);
             lastTimestamp = GetTime();
+            generation++;
 		}
+
+        Vector2 textSize = MeasureTextEx(GetFontDefault(), TextFormat("Generation #%i | Time Left: %.1fs", generation + 1, 30 - (GetTime() - lastTimestamp)), 32, 0);
+
+        int xPosition = (width / 2.f) - (textSize.x / 2);
+        int yPosition = (50.f);
+        DrawText(TextFormat("Generation #%i | Time Left: %.1fs", generation + 1, 30 - (GetTime() - lastTimestamp)), xPosition, yPosition, 32, BLACK);
+
 
         EndDrawing();
     }

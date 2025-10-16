@@ -6,12 +6,13 @@
 Player::Player(Vector2 position, float maxSpeed, float maxForce, Screen screen, int agentType) {
     this->wandering = false;
     this->position = position;
-    this->velocity = Vector2Zero();
+    this->lastPosition = { position.x, position.y };
     this->acceleration = Vector2Zero();
     this->maxSpeed = maxSpeed;
     this->maxForce = maxForce;
-	this->wanderSettings = { Vector2({ (float)(rand() % screen.width), (float)(rand() % screen.height) }), GetTime() };
+    this->wanderSettings = { Vector2({ (float)(rand() % screen.width), (float)(rand() % screen.height) }), GetTime() + ((rand() % 1000) / 1000.f) };
     this->score = 0;
+	this->agentType = agentType;
     
     // randomize agent type
     // 0 -> low sight range, high pick up range
@@ -23,6 +24,7 @@ Player::Player(Vector2 position, float maxSpeed, float maxForce, Screen screen, 
 void Player::search(Item* items, int itemCount) {
     int closestItem = 0;
 	float closestDistance = Vector2Distance(position, items[closestItem].position);
+
     for (int i = 0; i < itemCount; i++) {
         if (items[i].collected) continue;
 
@@ -47,19 +49,34 @@ void Player::search(Item* items, int itemCount) {
         return;
     }
 
+    if ((GetTime() - wanderSettings.wanderTime) < .7f && (agentType == 1) && !items[closestItem].isBomb) {
+        dash(items[closestItem].position);
+    }
+
 	wander();
 }
 
+Vector2 Player::calculateVelocity() {
+    return Vector2Subtract(position, lastPosition);
+}
+
 void Player::update() {
-    velocity = Vector2Add(velocity, acceleration);
+	float dt = GetFrameTime();
+	Vector2 tempPosition = { position.x, position.y };
+
+    Vector2 velocity = Vector2Add(calculateVelocity(), acceleration);
     if (Vector2Length(velocity) > maxSpeed) {
         Vector2Scale(Vector2Normalize(velocity), maxSpeed);
     }
-    position = Vector2Add(position, velocity);
-	if (position.x > screen.width) position.x = 0;
-	if (position.x < 0) position.x = screen.width;
-	if (position.y > screen.height) position.y = 0;
-	if (position.y < 0) position.y = screen.height;
+
+	position = Vector2Add(position, velocity);
+	lastPosition = tempPosition;
+
+    float hitboxSize = 12.f;
+	if (position.x + hitboxSize > screen.width) position.x = screen.width - hitboxSize;
+	if (position.x - hitboxSize < 0) position.x = 0 + hitboxSize;
+    if (position.y + hitboxSize > screen.height) position.y = screen.height - hitboxSize;
+	if (position.y - hitboxSize < 0) position.y = 0 + hitboxSize;
     acceleration = Vector2Zero();
 }
 
@@ -70,7 +87,7 @@ void Player::applyForce(Vector2 force) {
 void Player::seek(Vector2 target) {
     wandering = false;
     Vector2 desired = Vector2Scale(Vector2Normalize(Vector2Subtract(target, position)), maxSpeed);
-    Vector2 steer = Vector2Subtract(desired, velocity);
+    Vector2 steer = Vector2Subtract(desired, calculateVelocity());
 
     // target
     DrawLine(position.x, position.y, target.x, target.y, GREEN);
@@ -81,7 +98,7 @@ void Player::seek(Vector2 target) {
 void Player::avoid(Vector2 target) {
     wandering = false;
     Vector2 desired = Vector2Scale(Vector2Normalize(Vector2Subtract(position, target)), maxSpeed);
-    Vector2 steer = Vector2Subtract(desired, velocity);
+    Vector2 steer = Vector2Subtract(desired, calculateVelocity());
 
     // target
     DrawLine(position.x, position.y, target.x, target.y, GREEN);
@@ -91,13 +108,21 @@ void Player::avoid(Vector2 target) {
 
 
 void Player::wander() {
-    seek(wanderSettings.wanderPosition);
-    wandering = true;
-
     if (GetTime() - wanderSettings.wanderTime >= 2) {
         wanderSettings.wanderPosition = Vector2({ (float)(rand() % screen.width), (float)(rand() % screen.height) });
         wanderSettings.wanderTime = GetTime();
     }
+
+    if (agentType == 1) maxSpeed /= 2.5;
+    seek(wanderSettings.wanderPosition);
+    if (agentType == 1) maxSpeed *= 2.5;
+    wandering = true;
+}
+
+void Player::dash(Vector2 target) {
+    maxForce *= 20;
+	seek(target);
+    maxForce /= 20;
 }
 
 void Player::draw(Texture2D* textures, int frameCount) {
@@ -105,14 +130,15 @@ void Player::draw(Texture2D* textures, int frameCount) {
     Rectangle sourceRec = { 0.0f, 0.0f, size.x, size.y };
     Rectangle destRec = { position.x, position.y, size.x, size.y };
     Vector2 origin = { size.x / 2, size.y / 2 };
+	Vector2 velocity = calculateVelocity();
     float rotation = atan2(velocity.x, -velocity.y);
 
     // ship
     DrawTexturePro(textures[(frameCount / 10) % 3], sourceRec, destRec, origin, rotation * ((float)180 / PI), WHITE);
 
     // ranges
-    DrawCircleLines(position.x, position.y, agent.pickupRadius, BLUE);
-    DrawCircleLines(position.x, position.y, agent.searchRadius, RED);
+	DrawCircleLines(position.x, position.y, agent.pickupRadius, RED); // red = pickup
+	DrawCircleLines(position.x, position.y, agent.searchRadius, BLUE); // blue = search
 
     // score
     Vector2 textSize = MeasureTextEx(GetFontDefault(), TextFormat("score: %d", score), 16, 0);
